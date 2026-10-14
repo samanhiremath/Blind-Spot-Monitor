@@ -1,21 +1,7 @@
 """
 Minimal live radar view with a zone alert (AWR1843).
 
-Shows a top-down map (x = right, y = forward, meters) with the radar at the bottom, the alert zone as a
-rectangle, and live points. The zone and window turn red and beep when something is inside the zone.
 
-LIVE (close the Visualizer first; needs pip install pyserial matplotlib):
-    python live_view.py live --cli COM5 --data COM6 --cfg blindspot_awr1843.cfg
-
-REPLAY a recorded log (no radar needed):
-    python live_view.py replay logs\\<folder>\\points.csv
-
-Colors: red = point inside the zone that counts toward the alert, blue = other accepted point,
-        light gray = point ignored by your filters (--min-snr, --min-speed, --max-range).
-Options match alert_zone.py (radar-frame rectangle --x-min.. or car-frame zone --mount-yaw 45 --side right
---lat-min --lat-max --rear-min --rear-max, plus --min-snr --min-speed --max-range --on-frames --off-frames
---min-points), plus --view-range (map size, m; automatic when --mount-yaw is used) and --trail.
-Needs awr1843_logger.py and alert_zone.py in the same folder.
 """
 import argparse
 import csv
@@ -34,7 +20,7 @@ import alert_zone as A
 import awr1843_logger as L
 
 
-# ---------- data sources: poll() returns a list of (frame_number, points) that arrived since the last call ----------
+
 class LiveSource:
     def __init__(self, a):
         import serial
@@ -122,7 +108,7 @@ class ReplaySource:
         pass
 
 
-# ---------- the viewer ----------
+
 class Viewer:
     def __init__(self, source, a, beep=True):
         self.src, self.a, self.beep_on = source, a, beep
