@@ -1,36 +1,4 @@
-"""
-Zone alert for the AWR1843: raises an alert when radar points appear inside a rectangle.
 
-Two ways to define the zone:
-
- 1) Radar frame (default): a rectangle in meters from the radar, x = right, y = forward (along the radar's
-    boresight). Default x 0..1, y 0..1.   Options: --x-min --x-max --y-min --y-max
-
- 2) Car frame (use this to mimic a real blind-spot radar): give --mount-yaw, the angle the radar is turned
-    outward from straight back (45 = rear quarter panel angled 45 degrees). The zone is then a rectangle on
-    the road next to the car, and the code rotates it into radar coordinates for you.
-        --mount-yaw 45        radar boresight is 45 deg outward from straight back
-        --side right|left     which side of the car the radar is on (default right)
-        --lat-min 0.5 --lat-max 4      sideways distance outward from the car's side (m)
-        --rear-min 0 --rear-max 8      distance behind the radar (m); negative = ahead of the radar
-
-LIVE (needs the radar; close the Visualizer first):
-    python alert_zone.py live --cli COM5 --data COM6 --cfg blindspot_awr1843.cfg
-
-REPLAY a log recorded by awr1843_logger.py (no radar needed):
-    python alert_zone.py replay logs\\<folder>\\points.csv
-
-Useful options:
-    --x-min 0 --x-max 1 --y-min 0 --y-max 1     zone rectangle
-    --min-snr 18        ignore weak points (dB)
-    --min-speed 0.5     ignore points slower than this (m/s); use it to ignore stationary clutter
-    --max-range 20      ignore far points
-    --on-frames 3       zone must have points for this many frames in a row to alert (10 fps -> 0.3 s)
-    --off-frames 5      zone must be clear this many frames in a row to clear the alert
-    --min-points 1      points needed in a frame to count as a hit
-
-Needs awr1843_logger.py in the same folder. Live mode needs: pip install pyserial
-"""
 import argparse
 import csv
 import math
@@ -75,10 +43,10 @@ def zone_polygon(a):
     poly = []
     for lat, rear in ((a.lat_min, a.rear_min), (a.lat_max, a.rear_min),
                       (a.lat_max, a.rear_max), (a.lat_min, a.rear_max)):
-        r, f = lat, -rear          # car frame for a right-side radar: r = outward, f = forward
+        r, f = lat, -rear         
         x = -r * cy - f * sy
         y = r * sy - f * cy
-        poly.append((-x if a.side == "left" else x, y))   # left side is the mirror image
+        poly.append((-x if a.side == "left" else x, y))   
     return poly
 
 
@@ -94,7 +62,7 @@ def point_in_poly(x, y, poly):
 
 
 def in_zone(a, x, y):
-    if a.mount_yaw is None:  # plain rectangle: inclusive edges
+    if a.mount_yaw is None:  
         return a.x_min <= x <= a.x_max and a.y_min <= y <= a.y_max
     poly = getattr(a, "_poly", None)
     if poly is None:
@@ -185,7 +153,7 @@ def run_replay(a):
     announce_zone(a)
     alert = ZoneAlert(a.on_frames, a.off_frames)
     n_on, active_frames = 0, 0
-    for fr in range(first, last + 1):  # frames with no detections are not in the csv: treat as empty
+    for fr in range(first, last + 1):  
         hits = points_in_zone(frames.get(fr, []), a)
         event = alert.update(len(hits) >= a.min_points)
         t = (fr - first) * a.frame_ms / 1000.0
