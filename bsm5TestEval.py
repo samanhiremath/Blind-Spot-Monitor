@@ -1,37 +1,4 @@
-"""
-Blind spot monitor prototype v2: learned classifier with better distance cues.
 
-WHAT CHANGED FROM v1 (aimed at far-lane trucks / SUVs triggering false alarms)
-    - bottom_frac: where the car's bottom edge sits in the frame. Far-lane cars have their
-      wheels higher up in the image; adjacent-lane cars are low or cut off by the window sill.
-    - vehicle class (is_big for truck/bus, is_moto): so "wide" means different things for a
-      truck and a sedan.
-    - left/right/bottom clipping flags (cars alongside you are usually partly out of frame).
-    - motion features from tracking: sideways speed, width growth, time in view.
-    - A random forest instead of a depth-3 tree, with a threshold sweep so you can pick
-      ENTER_P from real numbers.
-    - In run mode, press N when you see a FALSE ALARM: it saves that car's recent frames as
-      "not blind spot" examples (hard negatives) for the next training round.
-
-MODES (set MODE below; "evaluate" is explained at the bottom of this list)
-    "label"      Click a car's box when it enters your blind spot, again when it leaves.
-                 SPACE pauses, S saves + quits. Writes labels_<video>.csv.
-    "refeature"  Upgrade your v1 label files: re-runs detection on the videos and carries your
-                 old labels over to the new features (so you don't have to relabel).
-    "train"      Fits the model on all labels_*.csv, prints validation + threshold sweep.
-    "run"        Detection + tracking + classifier -> BLIND SPOT alert.
-                 SPACE pauses, N = "that was a false alarm".
-
-    "evaluate"   Measures real accuracy on a clip the model never trained on: how many labeled
-                 blind-spot passes triggered the alert, how many false alarm episodes, and the
-                 alert timing. To prepare the clip: label it in label mode, then RENAME
-                 labels_<clip>.csv to eval_<clip>.csv (so train ignores it), set VIDEO_PATH to
-                 the clip, MODE = "evaluate".
-
-The model is specific to your camera position. If you move the phone, relabel and retrain.
-
-Install:  pip install ultralytics opencv-python numpy scikit-learn
-"""
 import csv
 import glob
 import os
@@ -43,38 +10,48 @@ from collections import deque
 import cv2
 import numpy as np
 
-# ----------------------------- SETTINGS ---------------------------------
-MODE = "run"              # "label" | "refeature" | "train" | "run" | "evaluate"
-VIDEO_PATH = r"C:\Users\ytabt\OneDrive\VSCode\cameraBlindSpotCode\testDataBSM9.mp4"    # H.264 mp4 (convert HEVC first), or 0 for a webcam in run mode
-VIDEO_DIR = r"C:\Users\ytabt\OneDrive\VSCode\blindSpotCode"             # where refeature looks for the videos named in old label files
+import csv
+import glob
+import os
+import pickle
+import random
+import shutil
+from collections import deque
+
+import cv2
+import numpy as np
+
+#SETTINGS 
+MODE = "run"             
+VIDEO_PATH = r"C:\Users\ytabt\OneDrive\VSCode\cameraBlindSpotCode\testDataBSM9.mp4"   
+VIDEO_DIR = r"C:\Users\ytabt\OneDrive\VSCode\blindSpotCode"      
 TRAIN_GLOB = "labels_*.csv"
 MODEL_FILE = "adjacent_model_v2.pkl"
-DISPLAY_SCALE = 0.5         # preview window size only
+DISPLAY_SCALE = 0.5        
 
-VEHICLES = {2, 3, 5, 7}     # COCO: car, motorcycle, bus, truck
+VEHICLES = {2, 3, 5, 7}     
 CONF = 0.30
-CROP = (0, 0, 1650, 1080)   # (x1, y1, x2, y2) in pixels of the ORIGINAL frame, or None for no crop.
-                            # Here: keep the left 1650 px, drop the right side. Use the SAME crop in
-                            # label, refeature, train and run (it changes the features).
-SHOW_ALL_BOXES = False      # run mode: False = box only cars in the blind spot; True = box every
-                            # tracked vehicle (orange = not in blind spot) for debugging
-IMGSZ = 640                 # detector input size. Smaller = faster (e.g. 480), slightly less accurate.
-                            # Use the SAME value in label, refeature, train and run.
+CROP = (0, 0, 1650, 1080)  
+                            
+                           
+SHOW_ALL_BOXES = False     
+                            
+IMGSZ = 640                
+                           
 
 # Run-mode filtering
-PROB_SMOOTHING = 0.4        # EMA on the classifier's probability, per car
-ENTER_P = 0.6            # probability needed to count a car as in the blind spot
-EXIT_P = 0.35               # must fall below this to count as gone (hysteresis)
-MIN_TRACK_AGE = 3           # frames a track must exist before it can alert
-COAST_FRAMES = 10           # keep a car counted this long if the detector drops it
+PROB_SMOOTHING = 0.4       
+ENTER_P = 0.6            
+EXIT_P = 0.35               
+MIN_TRACK_AGE = 3           
+COAST_FRAMES = 10          
 TRACK_TIMEOUT = 45
-HOLD_FRAMES = 15            # keep alert on this long after the last car leaves (~0.5 s)
-RECENT_ROWS = 45            # how many past frames per car are saved when you press N
+HOLD_FRAMES = 15           
+RECENT_ROWS = 45            
 
 # Evaluate mode
-EVAL_TOL_FRAMES = 15        # an alert within this many frames (0.5 s) of a labeled pass counts as a catch
-EVAL_GAP_FRAMES = 15        # merge labeled/alert frames separated by less than this into one episode
-# ------------------------------------------------------------------------
+EVAL_TOL_FRAMES = 15       
+EVAL_GAP_FRAMES = 15       
 
 FEATURES = ["w_frac", "h_frac", "cx_frac", "cy_frac", "top_frac", "bottom_frac", "aspect",
             "clip_bottom", "clip_left", "clip_right", "is_big", "is_moto",
@@ -155,7 +132,7 @@ def make_row(video, frame_idx, tid, label, feats):
     return row
 
 
-# ------------------------------- LABEL ----------------------------------
+# LABEL 
 def label_mode(cap):
     from ultralytics import YOLO
 
@@ -229,7 +206,7 @@ def label_mode(cap):
         print("Nothing to save.")
 
 
-# ----------------------------- REFEATURE --------------------------------
+# REFEATURE 
 def refeature():
     """Carry v1 labels over to v2 features by re-running tracking on the same videos."""
     from ultralytics import YOLO
@@ -288,7 +265,7 @@ def refeature():
         print(f"  wrote {p} (old file kept as old_{os.path.basename(p)})")
 
 
-# ------------------------------- TRAIN ----------------------------------
+# TRAIN
 def load_rows(paths):
     X, y, groups = [], [], []
     for p in paths:
@@ -353,7 +330,7 @@ def train(paths=None, model_file=None):
     print(f"\nSaved {model_file}")
 
 
-# -------------------------------- RUN -----------------------------------
+# RUN 
 class RunTrack:
     def __init__(self, frame_idx):
         self.p = None
@@ -479,7 +456,7 @@ def run(cap):
                 print("No car currently flagged, nothing saved.")
 
 
-# ------------------------------ EVALUATE --------------------------------
+# EVALUATE
 def episodes(frames, gap):
     """Group frame numbers into [start, end] runs, merging gaps of <= gap frames."""
     eps = []
@@ -588,7 +565,7 @@ def evaluate(cap):
           f"{EVAL_TOL_FRAMES} frames)")
 
 
-# -------------------------------- main ----------------------------------
+# main 
 def main():
     if MODE == "train":
         train()
