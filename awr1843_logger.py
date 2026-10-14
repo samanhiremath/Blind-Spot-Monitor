@@ -1,25 +1,4 @@
-"""
-AWR1843 logger: sends a .cfg to the out-of-box demo over the CLI port,
-then reads the data port, parses frames, and logs detected points.
 
-Requires: pip install pyserial
-Close the mmWave Demo Visualizer first (only one program can hold a COM port).
-
-Usage (Windows example):
-    python awr1843_logger.py --cli COM5 --data COM6 --cfg blindspot_awr1843.cfg --note "car passing, 40 km/h"
-
-Outputs in ./logs/<timestamp>/ :
-    points.csv   one row per detected point (host_time, frame, x, y, z, vel, snr_db, noise_db)
-    frames.csv   one row per frame (host_time, frame, num_points)
-    raw.bin      raw bytes from the data port (for replay / re-parsing)
-    note.txt     your note for this recording
-
-Coordinates (TI convention): x = right, y = forward (boresight), z = up, in meters.
-Velocity in m/s: negative = approaching the radar, positive = moving away.
-
-Assumes SDK 3.x out-of-box demo output (TLV 1 = detected points as 4 floats,
-TLV 7 = side info). If your SDK differs, parse_frame() is the one place to adjust.
-"""
 import argparse
 import csv
 import os
@@ -31,8 +10,8 @@ from datetime import datetime
 import serial
 
 MAGIC = bytes([0x02, 0x01, 0x04, 0x03, 0x06, 0x05, 0x08, 0x07])
-HEADER_FMT = "<8sIIIIIIII"  # magic, version, totalLen, platform, frameNum, cpuCycles, numObj, numTLVs, subFrame
-HEADER_SIZE = struct.calcsize(HEADER_FMT)  # 40 bytes
+HEADER_FMT = "<8sIIIIIIII"  
+HEADER_SIZE = struct.calcsize(HEADER_FMT)  
 TLV_HDR_FMT = "<II"
 TLV_HDR_SIZE = 8
 
@@ -40,7 +19,7 @@ TLV_DETECTED_POINTS = 1
 TLV_SIDE_INFO = 7
 
 
-# Lines that vary between SDK versions; if the radar rejects one, warn and continue.
+
 OPTIONAL = ("sensorStop", "bpmCfg", "lvdsStreamCfg", "CQRxSatMonitor", "CQSigImgMonitor",
             "analogMonitor", "calibData", "measureRangeBiasAndRxChanPhase",
             "compRangeBiasAndRxChanPhase", "calibDcRangeSig", "extendedMaxVelocity",
@@ -49,7 +28,7 @@ OPTIONAL = ("sensorStop", "bpmCfg", "lvdsStreamCfg", "CQRxSatMonitor", "CQSigImg
 
 def send_cfg(cli, cfg_path):
     """Send each non-comment line of the cfg and wait for 'Done' or an error."""
-    if not os.path.exists(cfg_path):  # also look next to this script, not just in the terminal's folder
+    if not os.path.exists(cfg_path):  
         beside = os.path.join(os.path.dirname(os.path.abspath(__file__)), cfg_path)
         if os.path.exists(beside):
             cfg_path = beside
@@ -99,7 +78,7 @@ def parse_frame(packet):
             n = len(payload) // 4
             for i in range(n):
                 snr, noise = struct.unpack_from("<HH", payload, i * 4)
-                side.append((snr * 0.1, noise * 0.1))  # units of 0.1 dB
+                side.append((snr * 0.1, noise * 0.1))  
     points = []
     for i, (x, y, z, v) in enumerate(xyzv):
         snr, noise = side[i] if i < len(side) else (float("nan"), float("nan"))
@@ -126,7 +105,7 @@ def main():
     data = serial.Serial(args.data, 921600, timeout=0.1)
 
     print(f"Sending {args.cfg} ...")
-    send_cfg(cli, args.cfg)  # ends with sensorStart
+    send_cfg(cli, args.cfg)  
     data.reset_input_buffer()
     print(f"Logging to {run_dir}  (Ctrl+C to stop)")
 
@@ -149,18 +128,18 @@ def main():
             if chunk:
                 raw_f.write(chunk)
                 buf += chunk
-            # extract complete packets
+     
             while True:
                 i = buf.find(MAGIC)
                 if i < 0:
-                    buf = buf[-7:]  # keep a possible partial magic word
+                    buf = buf[-7:]  
                     break
                 if i > 0:
                     buf = buf[i:]
                 if len(buf) < HEADER_SIZE:
                     break
                 total_len = struct.unpack_from("<I", buf, 12)[0]
-                if total_len < HEADER_SIZE or total_len > 200000:  # corrupt header; resync
+                if total_len < HEADER_SIZE or total_len > 200000:  
                     buf = buf[8:]
                     continue
                 if len(buf) < total_len:
